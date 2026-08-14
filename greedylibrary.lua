@@ -24,6 +24,7 @@ local DEFAULT_THEME = {
 	Ok = Color3.fromRGB(80, 170, 70),
 }
 
+-- Randomize Instance.Name only (NOT visible Text)
 local function gid()
 	return HttpService:GenerateGUID(false):gsub("%-", ""):sub(1, 14)
 end
@@ -240,6 +241,19 @@ function GreedyUI.new(opts)
 		self._content.Parent = main
 	end
 
+	
+	-- randomize all descendant Names (not Text)
+	task.defer(function()
+		if self.Main then
+			for _, d in ipairs(self.Main:GetDescendants()) do
+				pcall(function()
+					d.Name = gid()
+				end)
+			end
+			self.Main.Name = gid()
+		end
+	end)
+
 	return self
 end
 
@@ -301,7 +315,7 @@ end
 function GreedyUI:Button(tab, text, cb, color)
 	local page = typeof(tab) == "string" and self._pages[tab] or tab
 	local b = Instance.new("TextButton")
-	b.Name = gid()
+	b.Name = gid() -- random Name; Text stays readable
 	b.Size = UDim2.new(1, 0, 0, 32)
 	b.BackgroundColor3 = color or self.theme.Btn
 	b.Text = text
