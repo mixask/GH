@@ -30,8 +30,14 @@ export default {
 
     if (url.pathname === "/loader.lua") {
       const response = await fetch(
-        "https://raw.githubusercontent.com/mixask/GH/main/loader.lua"
+        "https://raw.githubusercontent.com/mixask/GH/main/greedyloader.lua"
       );
+
+      if (!response.ok) {
+        return new Response("Loader file not found", {
+          status: 404
+        });
+      }
 
       return new Response(await response.text(), {
         headers: {
@@ -41,6 +47,8 @@ export default {
       });
     }
 
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", {
+      status: 404
+    });
   }
 };
