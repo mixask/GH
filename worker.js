@@ -28,6 +28,19 @@ export default {
       });
     }
 
+    if (url.pathname === "/loader.lua") {
+      const response = await fetch(
+        "https://raw.githubusercontent.com/mixask/GH/main/loader.lua"
+      );
+
+      return new Response(await response.text(), {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache"
+        }
+      });
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 };
