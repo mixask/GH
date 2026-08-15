@@ -1,1 +1,1 @@
-works
+print("works")
