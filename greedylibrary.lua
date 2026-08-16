@@ -1,7 +1,8 @@
 --[[
-  Greedy Hudzell UI Library v2 (порядковые имена, исправленный Toggle)
+  Greedy Hudzell UI Library v2
+  – порядковые имена (UI1, UI2, ...)
+  – Toggle меняет цвет и текст
 ]]
-local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
@@ -20,7 +21,6 @@ local DEFAULT_THEME = {
 	Ok = Color3.fromRGB(80, 170, 70),
 }
 
--- ПОРЯДКОВЫЙ СЧЁТЧИК ИМЁН (вместо рандома)
 local _idCounter = 0
 local function nextId()
 	_idCounter = _idCounter + 1
@@ -50,9 +50,7 @@ function GreedyUI.new(opts)
 	self.logo = opts.logo
 	self.onClose = opts.onClose
 	self._pages = {}
-	self._tabs = {}
 	self._current = nil
-	self._cleanups = {}
 
 	local parent = opts.parent
 	if not parent then
@@ -77,7 +75,7 @@ function GreedyUI.new(opts)
 	stroke(main, self.theme.Accent)
 	self.Main = main
 
-	-- drag logic (без изменений)
+	-- drag
 	do
 		local dragging, start, startPos
 		main.InputBegan:Connect(function(i)
@@ -100,6 +98,7 @@ function GreedyUI.new(opts)
 		end)
 	end
 
+	-- title bar
 	local top = Instance.new("Frame")
 	top.Name = nextId()
 	top.Size = UDim2.new(1, 0, 0, 36)
@@ -168,7 +167,6 @@ function GreedyUI.new(opts)
 
 	closeBtn.MouseButton1Click:Connect(function()
 		if self.onClose then pcall(self.onClose) end
-		for _, fn in ipairs(self._cleanups) do pcall(fn) end
 		if self._sg then self._sg:Destroy() else main:Destroy() if float then float:Destroy() end end
 	end)
 
@@ -205,7 +203,8 @@ function GreedyUI.new(opts)
 		self._tabBar.BackgroundColor3 = self.theme.Panel
 		self._tabBar.Parent = main
 		corner(self._tabBar, 8)
-		Instance.new("UIListLayout", self._tabBar).Padding = UDim.new(0, 4)
+		local ll = Instance.new("UIListLayout", self._tabBar)
+		ll.Padding = UDim.new(0, 4)
 		self._content.Size = UDim2.new(1, -130, 1, -48)
 		self._content.Position = UDim2.new(0, 6, 0, 42)
 		self._content.Parent = main
@@ -215,7 +214,8 @@ function GreedyUI.new(opts)
 		self._tabBar.BackgroundColor3 = self.theme.Panel
 		self._tabBar.Parent = main
 		corner(self._tabBar, 8)
-		Instance.new("UIListLayout", self._tabBar).Padding = UDim.new(0, 4)
+		local ll = Instance.new("UIListLayout", self._tabBar)
+		ll.Padding = UDim.new(0, 4)
 		self._content.Size = UDim2.new(1, -130, 1, -48)
 		self._content.Position = UDim2.new(0, 122, 0, 42)
 		self._content.Parent = main
@@ -224,7 +224,6 @@ function GreedyUI.new(opts)
 	return self
 end
 
--- методы: AddTab, SelectTab, Button, Toggle, Slider, Info, Image, SetSize, Destroy
 function GreedyUI:AddTab(name)
 	if self.layout == "none" then
 		name = name or "Main"
@@ -290,11 +289,10 @@ function GreedyUI:Button(tab, text, cb, color)
 	return b
 end
 
--- ИСПРАВЛЕННЫЙ Toggle (меняет цвет)
 function GreedyUI:Toggle(tab, text, default, cb)
 	local state = default and true or false
 	local b = self:Button(tab, text .. ": " .. (state and "ON" or "OFF"), nil)
-	b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad   -- начальный цвет
+	b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad
 	b.MouseButton1Click:Connect(function()
 		state = not state
 		b.Text = text .. ": " .. (state and "ON" or "OFF")
