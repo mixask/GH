@@ -331,18 +331,24 @@ function GreedyUI:Button(tab, text, cb, color)
 end
 
 function GreedyUI:Toggle(tab, text, default, cb)
-	local state = default and true or false
-	local b = self:Button(tab, text .. ": " .. (state and "ON" or "OFF"), nil)
-	b.MouseButton1Click:Connect(function()
-		state = not state
-		b.Text = text .. ": " .. (state and "ON" or "OFF")
-		if cb then
-			cb(state)
-		end
-	end)
-	return function()
-		return state
-	end
+    local state = default and true or false
+    local b = self:Button(tab, text .. ": " .. (state and "ON" or "OFF"), nil)
+
+    -- Устанавливаем начальный цвет
+    b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad
+
+    b.MouseButton1Click:Connect(function()
+        state = not state
+        b.Text = text .. ": " .. (state and "ON" or "OFF")
+        b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad   -- меняем цвет
+        if cb then
+            cb(state)
+        end
+    end)
+
+    return function()
+        return state
+    end
 end
 
 function GreedyUI:Slider(tab, text, min, max, default, cb)
