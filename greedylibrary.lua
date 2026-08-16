@@ -1,7 +1,7 @@
 --[[
-  Greedy Hudzell UI Library v2
-  – порядковые имена (UI1, UI2, ...)
-  – Toggle меняет цвет и текст
+  Greedy Hudzell UI Library v2.1
+  – sequential names UI1, UI2 (visible labels stay normal)
+  – Toggle: ON/OFF + green/red (reliable)
 ]]
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -57,8 +57,12 @@ function GreedyUI.new(opts)
 		local sg = Instance.new("ScreenGui")
 		sg.Name = nextId()
 		sg.ResetOnSpawn = false
-		pcall(function() sg.Parent = game:GetService("CoreGui") end)
-		if not sg.Parent then sg.Parent = player:WaitForChild("PlayerGui") end
+		pcall(function()
+			sg.Parent = game:GetService("CoreGui")
+		end)
+		if not sg.Parent then
+			sg.Parent = player:WaitForChild("PlayerGui")
+		end
 		parent = sg
 		self._sg = sg
 	end
@@ -75,7 +79,6 @@ function GreedyUI.new(opts)
 	stroke(main, self.theme.Accent)
 	self.Main = main
 
-	-- drag
 	do
 		local dragging, start, startPos
 		main.InputBegan:Connect(function(i)
@@ -98,7 +101,6 @@ function GreedyUI.new(opts)
 		end)
 	end
 
-	-- title bar
 	local top = Instance.new("Frame")
 	top.Name = nextId()
 	top.Size = UDim2.new(1, 0, 0, 36)
@@ -159,18 +161,26 @@ function GreedyUI.new(opts)
 			float.Visible = false
 		end)
 	end
-
 	minBtn.MouseButton1Click:Connect(function()
 		main.Visible = false
-		if float then float.Visible = true end
+		if float then
+			float.Visible = true
+		end
 	end)
-
 	closeBtn.MouseButton1Click:Connect(function()
-		if self.onClose then pcall(self.onClose) end
-		if self._sg then self._sg:Destroy() else main:Destroy() if float then float:Destroy() end end
+		if self.onClose then
+			pcall(self.onClose)
+		end
+		if self._sg then
+			self._sg:Destroy()
+		else
+			main:Destroy()
+			if float then
+				float:Destroy()
+			end
+		end
 	end)
 
-	-- layout regions
 	self._tabBar = Instance.new("Frame")
 	self._tabBar.Name = nextId()
 	self._content = Instance.new("Frame")
@@ -203,19 +213,17 @@ function GreedyUI.new(opts)
 		self._tabBar.BackgroundColor3 = self.theme.Panel
 		self._tabBar.Parent = main
 		corner(self._tabBar, 8)
-		local ll = Instance.new("UIListLayout", self._tabBar)
-		ll.Padding = UDim.new(0, 4)
+		Instance.new("UIListLayout", self._tabBar).Padding = UDim.new(0, 4)
 		self._content.Size = UDim2.new(1, -130, 1, -48)
 		self._content.Position = UDim2.new(0, 6, 0, 42)
 		self._content.Parent = main
-	else -- tabs_left
+	else
 		self._tabBar.Size = UDim2.new(0, 110, 1, -48)
 		self._tabBar.Position = UDim2.new(0, 6, 0, 42)
 		self._tabBar.BackgroundColor3 = self.theme.Panel
 		self._tabBar.Parent = main
 		corner(self._tabBar, 8)
-		local ll = Instance.new("UIListLayout", self._tabBar)
-		ll.Padding = UDim.new(0, 4)
+		Instance.new("UIListLayout", self._tabBar).Padding = UDim.new(0, 4)
 		self._content.Size = UDim2.new(1, -130, 1, -48)
 		self._content.Position = UDim2.new(0, 122, 0, 42)
 		self._content.Parent = main
@@ -242,6 +250,7 @@ function GreedyUI:AddTab(name)
 		end
 		return self._pages[name]
 	end
+
 	local b = Instance.new("TextButton")
 	b.Name = nextId()
 	b.Size = (self.layout == "tabs_horizontal" and UDim2.new(0, 90, 1, -4)) or UDim2.new(1, -8, 0, 28)
@@ -252,6 +261,7 @@ function GreedyUI:AddTab(name)
 	b.TextScaled = true
 	b.Parent = self._tabBar
 	corner(b, 6)
+
 	local sc = Instance.new("ScrollingFrame")
 	sc.Name = nextId()
 	sc.Size = UDim2.new(1, -10, 1, -10)
@@ -263,14 +273,21 @@ function GreedyUI:AddTab(name)
 	sc.Parent = self._content
 	Instance.new("UIListLayout", sc).Padding = UDim.new(0, 6)
 	self._pages[name] = sc
-	b.MouseButton1Click:Connect(function() self:SelectTab(name) end)
-	if not self._current then self:SelectTab(name) end
+
+	b.MouseButton1Click:Connect(function()
+		self:SelectTab(name)
+	end)
+	if not self._current then
+		self:SelectTab(name)
+	end
 	return sc
 end
 
 function GreedyUI:SelectTab(name)
 	self._current = name
-	for n, p in pairs(self._pages) do p.Visible = (n == name) end
+	for n, p in pairs(self._pages) do
+		p.Visible = (n == name)
+	end
 end
 
 function GreedyUI:Button(tab, text, cb, color)
@@ -279,27 +296,90 @@ function GreedyUI:Button(tab, text, cb, color)
 	b.Name = nextId()
 	b.Size = UDim2.new(1, 0, 0, 32)
 	b.BackgroundColor3 = color or self.theme.Btn
-	b.Text = text
+	b.Text = tostring(text or "")
 	b.TextColor3 = self.theme.Text
 	b.Font = Enum.Font.GothamSemibold
 	b.TextScaled = true
+	b.AutoButtonColor = true
 	b.Parent = page
 	corner(b, 6)
-	if cb then b.MouseButton1Click:Connect(cb) end
+	if cb then
+		b.MouseButton1Click:Connect(cb)
+	end
 	return b
 end
 
+-- Reliable toggle: holder color + label text (not only TextButton.Text)
 function GreedyUI:Toggle(tab, text, default, cb)
+	local page = typeof(tab) == "string" and self._pages[tab] or tab
 	local state = default and true or false
-	local b = self:Button(tab, text .. ": " .. (state and "ON" or "OFF"), nil)
-	b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad
-	b.MouseButton1Click:Connect(function()
+
+	local holder = Instance.new("Frame")
+	holder.Name = nextId()
+	holder.Size = UDim2.new(1, 0, 0, 32)
+	holder.BorderSizePixel = 0
+	holder.Parent = page
+	corner(holder, 6)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Name = nextId()
+	lbl.Size = UDim2.new(1, -8, 1, 0)
+	lbl.Position = UDim2.new(0, 4, 0, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextScaled = true
+	lbl.ZIndex = 2
+	lbl.Parent = holder
+
+	local btn = Instance.new("TextButton")
+	btn.Name = nextId()
+	btn.Size = UDim2.new(1, 0, 1, 0)
+	btn.BackgroundTransparency = 1
+	btn.Text = ""
+	btn.AutoButtonColor = false
+	btn.ZIndex = 3
+	btn.Parent = holder
+
+	local function paint()
+		if state then
+			holder.BackgroundColor3 = self.theme.Ok
+			lbl.Text = tostring(text) .. "  |  ON"
+		else
+			holder.BackgroundColor3 = self.theme.Bad
+			lbl.Text = tostring(text) .. "  |  OFF"
+		end
+	end
+	paint()
+
+	local lock = false
+	local function flip()
+		if lock then
+			return
+		end
+		lock = true
 		state = not state
-		b.Text = text .. ": " .. (state and "ON" or "OFF")
-		b.BackgroundColor3 = state and self.theme.Ok or self.theme.Bad
-		if cb then cb(state) end
-	end)
-	return function() return state end
+		paint()
+		if cb then
+			pcall(cb, state)
+		end
+		task.delay(0.12, function()
+			lock = false
+		end)
+	end
+	btn.MouseButton1Click:Connect(flip)
+	btn.Activated:Connect(flip)
+
+	return {
+		Get = function()
+			return state
+		end,
+		Set = function(v)
+			state = v and true or false
+			paint()
+		end,
+		Instance = holder,
+	}
 end
 
 function GreedyUI:Slider(tab, text, min, max, default, cb)
@@ -310,6 +390,7 @@ function GreedyUI:Slider(tab, text, min, max, default, cb)
 	holder.Size = UDim2.new(1, 0, 0, 48)
 	holder.BackgroundTransparency = 1
 	holder.Parent = page
+
 	local lab = Instance.new("TextLabel")
 	lab.Name = nextId()
 	lab.Size = UDim2.new(1, 0, 0, 18)
@@ -320,6 +401,7 @@ function GreedyUI:Slider(tab, text, min, max, default, cb)
 	lab.TextScaled = true
 	lab.TextXAlignment = Enum.TextXAlignment.Left
 	lab.Parent = holder
+
 	local bar = Instance.new("Frame")
 	bar.Name = nextId()
 	bar.Size = UDim2.new(1, 0, 0, 16)
@@ -327,19 +409,23 @@ function GreedyUI:Slider(tab, text, min, max, default, cb)
 	bar.BackgroundColor3 = self.theme.Btn
 	bar.Parent = holder
 	corner(bar, 6)
+
 	local fill = Instance.new("Frame")
 	fill.Name = nextId()
 	fill.Size = UDim2.new((value - min) / math.max(max - min, 1), 0, 1, 0)
 	fill.BackgroundColor3 = self.theme.Accent
 	fill.Parent = bar
 	corner(fill, 6)
+
 	local sliding = false
 	local function setFromX(x)
 		local rel = math.clamp((x - bar.AbsolutePosition.X) / math.max(bar.AbsoluteSize.X, 1), 0, 1)
 		value = math.floor(min + (max - min) * rel + 0.5)
 		fill.Size = UDim2.new(rel, 0, 1, 0)
 		lab.Text = text .. ": " .. tostring(value)
-		if cb then cb(value) end
+		if cb then
+			cb(value)
+		end
 	end
 	bar.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -357,7 +443,9 @@ function GreedyUI:Slider(tab, text, min, max, default, cb)
 			setFromX(i.Position.X)
 		end
 	end)
-	return function() return value end
+	return function()
+		return value
+	end
 end
 
 function GreedyUI:Info(tab, text)
@@ -366,7 +454,7 @@ function GreedyUI:Info(tab, text)
 	l.Name = nextId()
 	l.Size = UDim2.new(1, 0, 0, 22)
 	l.BackgroundTransparency = 1
-	l.Text = text
+	l.Text = tostring(text or "")
 	l.TextColor3 = self.theme.Muted
 	l.Font = Enum.Font.Gotham
 	l.TextScaled = true
@@ -394,8 +482,14 @@ function GreedyUI:SetSize(udim)
 end
 
 function GreedyUI:Destroy()
-	if self.onClose then pcall(self.onClose) end
-	if self._sg then self._sg:Destroy() elseif self.Main then self.Main:Destroy() end
+	if self.onClose then
+		pcall(self.onClose)
+	end
+	if self._sg then
+		self._sg:Destroy()
+	elseif self.Main then
+		self.Main:Destroy()
+	end
 end
 
 return GreedyUI
