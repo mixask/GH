@@ -61,6 +61,9 @@ TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\23\113\114\136", "\134\66\5
 TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\200\154\21\21", "\191\157\211\48\37\28")]:Info(TABLE_TableIndirection["infoTab%0"], LUAOBFUSACTOR_DECRYPT_STR_0("\248\13\241\25\62\198\95\220\9\62\197\26\248\16\122\247\10\246\92\44\139\81\164\82\110", "\90\191\127\148\124"));
 TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\77\174\107\71", "\119\24\231\78")]:Info(TABLE_TableIndirection["infoTab%0"], LUAOBFUSACTOR_DECRYPT_STR_0("\166\40\179\79\208\79\1\135\63\255\10\204\85\3\144\42\176\95\197", "\113\226\77\197\42\188\32"));
 local exec, support = TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\23\31\231\182\127\70", "\213\90\118\148")].getExecutorInfo();
+-- Защита от nil – подставляем значения по умолчанию
+exec = exec or "Unknown";
+support = support or "No Support";
 TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\110\7\241\6", "\45\59\78\212\54")]:Button(TABLE_TableIndirection["infoTab%0"], LUAOBFUSACTOR_DECRYPT_STR_0("\53\78\134\136\147\58\162\226\74\22", "\144\112\54\227\235\230\78\205") .. exec, nil, nil);
 TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\134\1\74\172", "\59\211\72\111\156\176")]:Button(TABLE_TableIndirection["infoTab%0"], LUAOBFUSACTOR_DECRYPT_STR_0("\125\146\243\61\65\149\247\119\14", "\77\46\231\131") .. support, nil, nil);
 TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\143\125\243\16", "\32\218\52\214")]:Button(TABLE_TableIndirection["infoTab%0"], LUAOBFUSACTOR_DECRYPT_STR_0("\109\24\33\177\177\148\76\73\77\24\35\172", "\58\46\119\81\200\145\208\37"), function()
