@@ -522,7 +522,7 @@ export default {
     if (path === "/loader.lua") return proxyGithub("greedyloader.lua");
     if (path === "/modules.lua") return proxyGithub("greedymodules.lua");
 
-    if (path === "/obfuscate" || path === "/obfuscate/") {
+    if (path === "/obfuscator" || path === "/obfuscate/") {
       return new Response(obfuscateHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
       });
