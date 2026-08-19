@@ -1,20 +1,19 @@
 /**
- * greedyhudzell.xyz Worker
+ * mixask/GH — worker.js (proxies + obfuscator)
  *
- * Lua proxies: /loader.lua /script.lua /library.lua /modules.lua
- * Obfuscator UI: GET /obfuscate
- * Obfuscator API: POST /api/obfuscate
- * Syntax check:   POST /api/syntax-check  (lightweight structural)
+ * Lua: /loader.lua /script.lua /library.lua /modules.lua
+ * UI:  GET /obfuscator  (and /obfuscate)
+ * API: POST /api/obfuscate
+ *      POST /api/syntax-check
  *
- * Cloudflare Secret (recommended):
- *   wrangler secret put LUAOBF_API_KEY
- * Then env.LUAOBF_API_KEY is used automatically.
- * Fallback only if secret missing (dev).
+ * Secret: wrangler secret put LUAOBF_API_KEY
  */
+
 const GH = "https://raw.githubusercontent.com/mixask/GH/main";
 const LUAOBF_NEW = "https://api.luaobfuscator.com/v1/obfuscator/newscript";
 const LUAOBF_RUN = "https://api.luaobfuscator.com/v1/obfuscator/obfuscate";
 const FALLBACK_KEY = "11ad3847-d943-4a76-ee19-f9acab3e85144ea9";
+const DISCORD = "https://discord.gg/sbVuaT9a2T";
 
 const TEXT_HEADERS = {
   "Content-Type": "text/plain; charset=utf-8",
@@ -37,7 +36,6 @@ async function proxyGithub(file) {
   return new Response(await response.text(), { headers: TEXT_HEADERS });
 }
 
-/** Plugins / root flags aligned with luaobfuscator.com */
 const PLUGIN_DEFS = [
   { key: "EncryptStrings", label: "Encrypt Strings", args: [100], type: "plugin" },
   { key: "SwizzleLookups", label: "Table indirection (SwizzleLookups)", args: [100], type: "plugin" },
@@ -99,7 +97,6 @@ function presetConfig(preset) {
       },
     };
   }
-  // default medium
   return {
     MinifiyAll: true,
     CustomPlugins: {
@@ -111,14 +108,12 @@ function presetConfig(preset) {
   };
 }
 
-/** Local: bit32-ish byte scramble + long-string embed (no remote API) */
 function bit32Embed(code) {
   const key = 0x5a;
   const bytes = [];
   for (let i = 0; i < code.length; i++) {
     bytes.push(code.charCodeAt(i) ^ (key + (i % 17)));
   }
-  // chunk as numbers
   const parts = [];
   for (let i = 0; i < bytes.length; i += 40) {
     parts.push(bytes.slice(i, i + 40).join(","));
@@ -140,7 +135,6 @@ local _fn, _err = loadstring(_src)
 if not _fn then error(_err) end
 return _fn()
 `;
-  // also wrap whole thing in long string loader for extra layer
   if (payload.includes("]=====]")) {
     return `return loadstring([======[\n${payload}\n]======])()`;
   }
@@ -202,7 +196,7 @@ async function callLuaObf(apiKey, code, cfg) {
   return { ok: true, code: out.code, sessionId: session.sessionId };
 }
 
-/** Structural syntax check (not full luac — runs on edge) */
+/** Structural syntax check — --[[ ]] is valid */
 function syntaxCheck(code) {
   const issues = [];
   if (!code || !code.trim()) {
@@ -212,14 +206,47 @@ function syntaxCheck(code) {
   const stack = [];
   let i = 0;
   let line = 1;
-  let inStr = null; // ' " or long
+  let inStr = null;
   let longEq = 0;
 
   while (i < code.length) {
     const c = code[i];
     if (c === "\n") line++;
 
-    // long strings [[ ]] [=[ ]=]
+    if (!inStr && c === "-" && code[i + 1] === "-" && code[i + 2] === "[") {
+      let j = i + 3;
+      let n = 0;
+      while (code[j] === "=") {
+        n++;
+        j++;
+      }
+      if (code[j] === "[") {
+        i = j + 1;
+        while (i < code.length) {
+          if (code[i] === "\n") line++;
+          if (code[i] === "]") {
+            let k = i + 1;
+            let m = 0;
+            while (code[k] === "=") {
+              m++;
+              k++;
+            }
+            if (m === n && code[k] === "]") {
+              i = k + 1;
+              break;
+            }
+          }
+          i++;
+        }
+        continue;
+      }
+    }
+
+    if (!inStr && c === "-" && code[i + 1] === "-") {
+      while (i < code.length && code[i] !== "\n") i++;
+      continue;
+    }
+
     if (!inStr && c === "[" && code[i + 1] === "[") {
       inStr = "long";
       longEq = 0;
@@ -273,17 +300,6 @@ function syntaxCheck(code) {
       continue;
     }
 
-    // line comments
-    if (c === "-" && code[i + 1] === "-") {
-      if (code[i + 2] === "[") {
-        // block comment treated roughly as long string scan
-        i += 2;
-        continue;
-      }
-      while (i < code.length && code[i] !== "\n") i++;
-      continue;
-    }
-
     if (pairs[c]) {
       stack.push({ ch: c, line });
     } else if (c === ")" || c === "]" || c === "}") {
@@ -297,18 +313,11 @@ function syntaxCheck(code) {
   if (inStr) issues.push("unclosed string/long-string");
   for (const s of stack) issues.push(`line ${s.line}: unclosed '${s.ch}'`);
 
-  // rough keyword balance
-  const ends = (code.match(/\bend\b/g) || []).length;
-  const starts =
-    (code.match(/\bfunction\b/g) || []).length +
-    (code.match(/\bthen\b/g) || []).length +
-    (code.match(/\bdo\b/g) || []).length;
-  // not exact but signal
-  if (Math.abs(ends - starts) > 5) {
-    issues.push(`possible block imbalance (function/then/do=${starts}, end=${ends})`);
-  }
-
-  return { ok: issues.length === 0, issues };
+  return {
+    ok: issues.length === 0,
+    issues,
+    note: "Block comments --[[ ]] are valid and ignored",
+  };
 }
 
 function obfuscateHtml() {
@@ -328,83 +337,172 @@ function obfuscateHtml() {
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Greedy · Lua Obfuscator</title>
+<title>Obfuscator · Greedy Hudzell</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
-:root{--bg:#0c0a05;--panel:#12100a;--btn:#2d240c;--accent:#ffc31e;--text:#ffe6be;--muted:#9e8c64;--ok:#50aa46;--bad:#e05555}
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-header{padding:14px 18px;border-bottom:1px solid #3a3010;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-header h1{margin:0;font-size:1.1rem;color:var(--accent)}
-header a{color:var(--muted);text-decoration:none;font-size:.9rem}
-main{max-width:1100px;margin:0 auto;padding:18px}
-.card{background:var(--panel);border:1px solid #3a3010;border-radius:12px;padding:14px;margin-bottom:14px}
-label.title{display:block;color:var(--muted);font-size:.82rem;margin-bottom:6px}
-.chk{display:flex;align-items:center;gap:8px;font-size:.9rem;margin:4px 0;color:var(--text)}
+:root{
+  --bg:#0a0a0a;--bg2:#111;--card:#141414;--border:#2a2a2a;
+  --text:#f2f2f2;--muted:#9a9a9a;--gold:#C9A227;--gold-soft:#E8C547;
+  --ok:#4caf7a;--bad:#e85d5d;--radius:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;line-height:1.55;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%,rgba(201,162,39,.08),transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(255,255,255,.03),transparent);
+}
+a{color:var(--gold-soft);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{width:min(980px,94vw);margin:0 auto;padding:28px 0 80px}
+.top{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:rgba(10,10,10,.78);border-bottom:1px solid var(--border);
+}
+.top-inner{
+  width:min(980px,94vw);margin:0 auto;display:flex;align-items:center;
+  justify-content:space-between;gap:16px;padding:14px 0;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;color:var(--text);text-decoration:none}
+.brand:hover{text-decoration:none}
+.brand-mark{
+  width:34px;height:34px;border-radius:10px;
+  background:linear-gradient(135deg,#1a1a1a,#2a2410);
+  border:1px solid var(--gold);display:grid;place-items:center;
+  color:var(--gold);font-size:14px;font-weight:700;
+}
+.nav{display:flex;flex-wrap:wrap;gap:6px}
+.nav a{
+  color:var(--muted);padding:8px 14px;border-radius:999px;
+  border:1px solid transparent;font-size:13px;font-weight:500;text-decoration:none;
+}
+.nav a:hover{color:var(--text);border-color:var(--border);background:var(--card);text-decoration:none}
+.nav a.active{color:#0a0a0a;background:var(--gold);border-color:var(--gold)}
+.panel{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:18px;margin-top:18px;
+}
+.panel h2{font-size:1.15rem;margin-bottom:4px}
+.panel .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+.card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  padding:14px;margin-bottom:12px;
+}
+label.title{
+  display:block;color:var(--muted);font-size:11px;text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:8px;font-weight:600;
+}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0;color:var(--text)}
+.chk input{accent-color:var(--gold)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:800px){.grid{grid-template-columns:1fr}}
-textarea,select,button{width:100%;border-radius:8px;border:1px solid #4a3c14;background:#1a150a;color:var(--text);padding:10px;font-size:.92rem}
-textarea{min-height:240px;font-family:ui-monospace,monospace;resize:vertical}
-button{background:var(--btn);color:var(--accent);font-weight:700;cursor:pointer;margin-top:8px}
-button:hover{filter:brightness(1.12)}button:disabled{opacity:.5;cursor:wait}
-.actions{display:flex;flex-wrap:wrap;gap:8px}
-.actions button{flex:1;min-width:140px}
-.status{margin-top:8px;font-size:.88rem;color:var(--muted);white-space:pre-wrap}
-.status.ok{color:var(--ok)}.status.err{color:var(--bad)}
-.hint{color:var(--muted);font-size:.78rem;line-height:1.4;margin-top:8px}
 .plugins{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
 @media(max-width:600px){.plugins{grid-template-columns:1fr}}
+textarea,select{
+  width:100%;border-radius:10px;border:1px solid var(--border);
+  background:#0c0c0c;color:var(--text);padding:10px 12px;font-size:13px;
+}
+textarea{
+  min-height:240px;font-family:"JetBrains Mono",ui-monospace,monospace;
+  font-size:12px;resize:vertical;
+}
+textarea:focus,select:focus{outline:1px solid rgba(201,162,39,.4)}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:10px 14px;border-radius:999px;font-size:13px;font-weight:600;
+  border:1px solid var(--border);background:var(--card);color:var(--text);
+  cursor:pointer;margin-top:8px;
+}
+.btn:hover{border-color:var(--gold);color:var(--gold-soft)}
+.btn:disabled{opacity:.5;cursor:wait}
+.btn-gold{
+  background:linear-gradient(135deg,var(--gold),#a8841a);
+  color:#0a0a0a;border-color:var(--gold);
+}
+.btn-gold:hover{color:#0a0a0a;filter:brightness(1.05)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.actions .btn{flex:1;min-width:120px}
+.status{margin-top:10px;font-size:13px;color:var(--muted);white-space:pre-wrap}
+.status.ok{color:var(--ok)}
+.status.err{color:var(--bad)}
+.hint{color:var(--muted);font-size:12px;line-height:1.45;margin-top:10px}
+footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
 </style>
 </head>
 <body>
-<header>
-  <h1>Greedy Hudzell · Lua Obfuscator</h1>
-  <a href="https://luaobfuscator.com" target="_blank">luaobfuscator.com</a>
-  <a href="https://discord.gg/sbVuaT9a2T">Discord</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="/">
+      <div class="brand-mark">GH</div>
+      <span>Greedy Hudzell</span>
+    </a>
+    <nav class="nav">
+      <a href="/">Home</a>
+      <a href="/status">Status</a>
+      <a href="/executors">Executors</a>
+      <a href="/guide">Guide</a>
+      <a href="/tos">ToS</a>
+      <a class="active" href="/obfuscator">Obfuscator</a>
+    </nav>
+  </div>
 </header>
-<main>
-  <div class="card">
-    <label class="title">Preset</label>
-    <select id="preset">
-      <option value="custom">Custom (checkboxes below)</option>
-      <option value="light">Light — SwizzleLookups + EncryptStrings</option>
-      <option value="medium" selected>Medium — strings + table + mild CF</option>
-      <option value="full">Full — Virtualize + all main plugins</option>
-      <option value="embed">Embed only — [=====[ ]=====]</option>
-      <option value="embed_bit32">Embed + bit32 scramble + table/strings pipeline</option>
-    </select>
-    <p class="hint">
-      <b>embed</b> — local wrap, no API.<br/>
-      <b>embed_bit32</b> — optional API light pass (if possible) then bit32 byte scramble inside long-string loader (needs bit32 at runtime / Luau bit32).<br/>
-      <b>full</b> — heavy VM; may break large Roblox scripts (upvalues).
-    </p>
-  </div>
 
-  <div class="card">
-    <label class="title">Root flags (luaobfuscator)</label>
-    <div class="plugins" id="roots">${rootChecks}</div>
-    <label class="title" style="margin-top:12px">CustomPlugins</label>
-    <div class="plugins" id="plugins">${pluginChecks}</div>
-  </div>
+<main class="wrap">
+  <section class="panel">
+    <h2>Lua obfuscator</h2>
+    <p class="sub">Same tabs as the rest of the site — leave via the top nav anytime.</p>
 
-  <div class="grid">
     <div class="card">
-      <label class="title">Input</label>
-      <textarea id="input" placeholder="paste Lua here..."></textarea>
-      <div class="actions">
-        <button id="run">Obfuscate</button>
-        <button id="checkIn">Check syntax (input)</button>
-      </div>
-      <div id="status" class="status"></div>
+      <label class="title">Preset</label>
+      <select id="preset">
+        <option value="custom">Custom (checkboxes below)</option>
+        <option value="light">Light — SwizzleLookups + EncryptStrings</option>
+        <option value="medium" selected>Medium — strings + table + mild CF</option>
+        <option value="full">Full — Virtualize + all main plugins</option>
+        <option value="embed">Embed only — [=====[ ]=====]</option>
+        <option value="embed_bit32">Embed + bit32 scramble + table/strings pipeline</option>
+      </select>
+      <p class="hint">
+        <b>embed</b> — local wrap, no API.<br/>
+        <b>embed_bit32</b> — optional API light pass then bit32 inside long-string loader (needs bit32 / Luau).<br/>
+        <b>full</b> — heavy VM; may break large Roblox scripts (upvalues).
+      </p>
     </div>
+
     <div class="card">
-      <label class="title">Output</label>
-      <textarea id="output" placeholder="result..."></textarea>
-      <div class="actions">
-        <button id="copy">Copy</button>
-        <button id="checkOut">Check syntax (output)</button>
+      <label class="title">Root flags (luaobfuscator)</label>
+      <div class="plugins" id="roots">${rootChecks}</div>
+      <label class="title" style="margin-top:14px">CustomPlugins</label>
+      <div class="plugins" id="plugins">${pluginChecks}</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <label class="title">Input</label>
+        <textarea id="input" placeholder="paste Lua here..."></textarea>
+        <div class="actions">
+          <button type="button" class="btn btn-gold" id="run">Obfuscate</button>
+          <button type="button" class="btn" id="checkIn">Check syntax (input)</button>
+        </div>
+        <div id="status" class="status"></div>
+      </div>
+      <div class="card">
+        <label class="title">Output</label>
+        <textarea id="output" placeholder="result..."></textarea>
+        <div class="actions">
+          <button type="button" class="btn" id="copy">Copy</button>
+          <button type="button" class="btn" id="checkOut">Check syntax (output)</button>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
+
+  <footer class="site">
+    © Greedy Hudzell · <a href="${DISCORD}">discord.gg/sbVuaT9a2T</a> · Not affiliated with Roblox
+  </footer>
 </main>
+
 <script>
 const statusEl = document.getElementById('status');
 const input = document.getElementById('input');
@@ -414,8 +512,12 @@ const runBtn = document.getElementById('run');
 
 function collectOptions() {
   const opts = {};
-  document.querySelectorAll('[data-root]').forEach(el => { opts[el.getAttribute('data-root')] = el.checked; });
-  document.querySelectorAll('[data-plugin]').forEach(el => { opts[el.getAttribute('data-plugin')] = el.checked; });
+  document.querySelectorAll('[data-root]').forEach(el => {
+    opts[el.getAttribute('data-root')] = el.checked;
+  });
+  document.querySelectorAll('[data-plugin]').forEach(el => {
+    opts[el.getAttribute('data-plugin')] = el.checked;
+  });
   return opts;
 }
 
@@ -435,7 +537,7 @@ async function doCheck(which) {
   try {
     const data = await syntaxCheck(code || '');
     if (data.ok) {
-      statusEl.textContent = 'Syntax check OK (structural — not full luac)';
+      statusEl.textContent = 'Syntax check OK' + (data.note ? ' — ' + data.note : '');
       statusEl.className = 'status ok';
     } else {
       statusEl.textContent = 'Issues:\\n' + (data.issues || []).join('\\n');
@@ -477,7 +579,7 @@ runBtn.onclick = async () => {
       statusEl.className = 'status err';
     } else {
       output.value = data.code || '';
-      statusEl.textContent = 'OK · ' + (data.mode || preset.value) + ' · ' + (data.code||'').length + ' chars';
+      statusEl.textContent = 'OK · ' + (data.mode || preset.value) + ' · ' + (data.code || '').length + ' chars';
       statusEl.className = 'status ok';
     }
   } catch (e) {
@@ -505,7 +607,7 @@ document.getElementById('copy').onclick = async () => {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const path = url.pathname;
+    const path = url.pathname.replace(/\/+$/, "") || "/";
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -522,9 +624,12 @@ export default {
     if (path === "/loader.lua") return proxyGithub("greedyloader.lua");
     if (path === "/modules.lua") return proxyGithub("greedymodules.lua");
 
-    if (path === "/obfuscator" || path === "/obfuscate/") {
+    if (path === "/obfuscator" || path === "/obfuscate") {
       return new Response(obfuscateHtml(), {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
       });
     }
 
@@ -538,8 +643,9 @@ export default {
           headers: JSON_HEADERS,
         });
       }
-      const result = syntaxCheck(body.code || "");
-      return new Response(JSON.stringify(result), { headers: JSON_HEADERS });
+      return new Response(JSON.stringify(syntaxCheck(body.code || "")), {
+        headers: JSON_HEADERS,
+      });
     }
 
     if (path === "/api/obfuscate" && request.method === "POST") {
@@ -570,7 +676,6 @@ export default {
       const apiKey = (env && env.LUAOBF_API_KEY) || FALLBACK_KEY;
 
       try {
-        // Local-only modes
         if (preset === "embed") {
           return new Response(
             JSON.stringify({ ok: true, code: plainLongStringEmbed(code), mode: "embed" }),
@@ -579,7 +684,6 @@ export default {
         }
 
         if (preset === "embed_bit32") {
-          // optional light API pass first
           let src = code;
           const light = await callLuaObf(apiKey, code, presetConfig("light"));
           if (light.ok) src = light.code;
@@ -589,7 +693,9 @@ export default {
               ok: true,
               code: wrapped,
               mode: "embed_bit32",
-              note: light.ok ? "api light + bit32 embed" : "bit32 embed only (api light failed: " + (light.error || "") + ")",
+              note: light.ok
+                ? "api light + bit32 embed"
+                : "bit32 embed only (api light failed: " + (light.error || "") + ")",
             }),
             { headers: JSON_HEADERS }
           );
@@ -607,7 +713,12 @@ export default {
           return new Response(JSON.stringify(result), { status: 502, headers: JSON_HEADERS });
         }
         return new Response(
-          JSON.stringify({ ok: true, code: result.code, mode: preset, sessionId: result.sessionId }),
+          JSON.stringify({
+            ok: true,
+            code: result.code,
+            mode: preset,
+            sessionId: result.sessionId,
+          }),
           { headers: JSON_HEADERS }
         );
       } catch (e) {
