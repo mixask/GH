@@ -2336,11 +2336,11 @@ local function createUI()
 		return TABLE_TableIndirection[LUAOBFUSACTOR_DECRYPT_STR_0("\95\202\227\86\22\147", "\34\51\163\144")];
 	end
 	local function lightenColor(c, amount)
-		amount = amount or 0.18;
+		amount = amount or 0.35;
 		return Color3.new(math.min(1, c.R + amount), math.min(1, c.G + amount), math.min(1, c.B + amount));
 	end
 	local function darkenColor(c, amount)
-		amount = amount or 0.14;
+		amount = amount or 0.3;
 		return Color3.new(math.max(0, c.R - amount), math.max(0, c.G - amount), math.max(0, c.B - amount));
 	end
 	local function makeToggle(parent, text, default, callback)
