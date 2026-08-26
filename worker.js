@@ -1,20 +1,19 @@
 /**
- * mixask/GH — worker.js (proxies + obfuscator)
+ * mixask/GH — worker.js (proxies + obfuscator + pricing/tos)
  *
  * Lua: /loader.lua /script.lua /library.lua /modules.lua
- * UI:  GET /obfuscator  (and /obfuscate)
+ * UI:  GET /obfuscator  /pricing  /tos  /privacy
  * API: POST /api/obfuscate
  *      POST /api/syntax-check
  *
  * Secret: wrangler secret put LUAOBF_API_KEY
  */
-
 const GH = "https://raw.githubusercontent.com/mixask/GH/main";
 const LUAOBF_NEW = "https://api.luaobfuscator.com/v1/obfuscator/newscript";
 const LUAOBF_RUN = "https://api.luaobfuscator.com/v1/obfuscator/obfuscate";
 const FALLBACK_KEY = "11ad3847-d943-4a76-ee19-f9acab3e85144ea9";
 const DISCORD = "https://discord.gg/sbVuaT9a2T";
-
+const FREE_KEY = "https://work.ink/28wp/Greedy-hudzell"; // adjust if needed
 const TEXT_HEADERS = {
   "Content-Type": "text/plain; charset=utf-8",
   "Cache-Control": "no-cache",
@@ -46,7 +45,6 @@ const PLUGIN_DEFS = [
   { key: "MutateAllLiterals", label: "Mutate Literals", args: [20], type: "plugin" },
   { key: "JunkifyAllIfStatements", label: "Junkify If Statements", args: [50], type: "plugin" },
 ];
-
 const ROOT_FLAGS = [
   { key: "MinifiyAll", label: "Minify All", def: true },
   { key: "Virtualize", label: "Virtualize (VM)", def: false },
@@ -170,7 +168,6 @@ async function callLuaObf(apiKey, code, cfg) {
   if (!session.sessionId) {
     return { ok: false, error: session.message || "no sessionId" };
   }
-
   const runRes = await fetch(LUAOBF_RUN, {
     method: "POST",
     headers: {
@@ -196,7 +193,6 @@ async function callLuaObf(apiKey, code, cfg) {
   return { ok: true, code: out.code, sessionId: session.sessionId };
 }
 
-/** Structural syntax check — --[[ ]] is valid */
 function syntaxCheck(code) {
   const issues = [];
   if (!code || !code.trim()) {
@@ -208,15 +204,16 @@ function syntaxCheck(code) {
   let line = 1;
   let inStr = null;
   let longEq = 0;
-
   while (i < code.length) {
     const c = code[i];
     if (c === "\n") line++;
-
     if (!inStr && c === "-" && code[i + 1] === "-" && code[i + 2] === "[") {
       let j = i + 3;
       let n = 0;
-      while (code[j] === "=") { n++; j++; }
+      while (code[j] === "=") {
+        n++;
+        j++;
+      }
       if (code[j] === "[") {
         i = j + 1;
         while (i < code.length) {
@@ -224,44 +221,75 @@ function syntaxCheck(code) {
           if (code[i] === "]") {
             let k = i + 1;
             let m = 0;
-            while (code[k] === "=") { m++; k++; }
-            if (m === n && code[k] === "]") { i = k + 1; break; }
+            while (code[k] === "=") {
+              m++;
+              k++;
+            }
+            if (m === n && code[k] === "]") {
+              i = k + 1;
+              break;
+            }
           }
           i++;
         }
         continue;
       }
     }
-
     if (!inStr && c === "-" && code[i + 1] === "-") {
       while (i < code.length && code[i] !== "\n") i++;
       continue;
     }
-
     if (!inStr && c === "[" && code[i + 1] === "[") {
-      inStr = "long"; longEq = 0; i += 2; continue;
+      inStr = "long";
+      longEq = 0;
+      i += 2;
+      continue;
     }
     if (!inStr && c === "[" && code[i + 1] === "=") {
-      let n = 0; let j = i + 1;
-      while (code[j] === "=") { n++; j++; }
-      if (code[j] === "[") { inStr = "long"; longEq = n; i = j + 1; continue; }
+      let n = 0;
+      let j = i + 1;
+      while (code[j] === "=") {
+        n++;
+        j++;
+      }
+      if (code[j] === "[") {
+        inStr = "long";
+        longEq = n;
+        i = j + 1;
+        continue;
+      }
     }
     if (inStr === "long") {
       if (c === "]") {
-        let n = 0; let j = i + 1;
-        while (code[j] === "=") { n++; j++; }
-        if (n === longEq && code[j] === "]") { inStr = null; i = j + 1; continue; }
+        let n = 0;
+        let j = i + 1;
+        while (code[j] === "=") {
+          n++;
+          j++;
+        }
+        if (n === longEq && code[j] === "]") {
+          inStr = null;
+          i = j + 1;
+          continue;
+        }
       }
-      i++; continue;
+      i++;
+      continue;
     }
-
-    if (!inStr && (c === '"' || c === "'")) { inStr = c; i++; continue; }
+    if (!inStr && (c === '"' || c === "'")) {
+      inStr = c;
+      i++;
+      continue;
+    }
     if (inStr === '"' || inStr === "'") {
-      if (c === "\\") { i += 2; continue; }
+      if (c === "\\") {
+        i += 2;
+        continue;
+      }
       if (c === inStr) inStr = null;
-      i++; continue;
+      i++;
+      continue;
     }
-
     if (pairs[c]) {
       stack.push({ ch: c, line });
     } else if (c === ")" || c === "]" || c === "}") {
@@ -274,7 +302,6 @@ function syntaxCheck(code) {
   }
   if (inStr) issues.push("unclosed string/long-string");
   for (const s of stack) issues.push(`line ${s.line}: unclosed '${s.ch}'`);
-
   return {
     ok: issues.length === 0,
     issues,
@@ -282,7 +309,30 @@ function syntaxCheck(code) {
   };
 }
 
-function pageShell(title, activeNav, content) {
+function navHtml(active) {
+  const items = [
+    ["/", "Home"],
+    ["/pricing", "Pricing"],
+    ["/status", "Status"],
+    ["/executors", "Executors"],
+    ["/guide", "Guide"],
+    ["/tos", "ToS"],
+    ["/obfuscator", "Obfuscator"],
+  ];
+  return items
+    .map(([href, label]) => {
+      const isActive =
+        active === label.toLowerCase() ||
+        (active === "pricing" && href === "/pricing") ||
+        (active === "tos" && href === "/tos") ||
+        (active === "obfuscator" && href === "/obfuscator") ||
+        (active === "privacy" && href === "/privacy");
+      return `<a href="${href}"${isActive ? ' class="active"' : ""}>${label}</a>`;
+    })
+    .join("\n      ");
+}
+
+function pageShell(title, activeNav, content, wide = false) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -306,13 +356,13 @@ body{
 }
 a{color:var(--gold-soft);text-decoration:none}
 a:hover{text-decoration:underline}
-.wrap{width:min(780px,94vw);margin:0 auto;padding:28px 0 80px}
+.wrap{width:min(${wide ? "1100px" : "780px"},94vw);margin:0 auto;padding:28px 0 80px}
 .top{
   position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
   background:rgba(10,10,10,.78);border-bottom:1px solid var(--border);
 }
 .top-inner{
-  width:min(980px,94vw);margin:0 auto;display:flex;align-items:center;
+  width:min(1100px,94vw);margin:0 auto;display:flex;align-items:center;
   justify-content:space-between;gap:16px;padding:14px 0;flex-wrap:wrap;
 }
 .brand{display:flex;align-items:center;gap:12px;font-weight:700;color:var(--text);text-decoration:none}
@@ -343,6 +393,53 @@ a:hover{text-decoration:underline}
   border-radius:999px;background:rgba(201,162,39,.12);color:var(--gold);
   border:1px solid rgba(201,162,39,.25);margin-bottom:18px;
 }
+.price-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:24px 0 12px;
+}
+@media(max-width:900px){.price-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.price-grid{grid-template-columns:1fr}}
+.price-card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 18px;display:flex;flex-direction:column;gap:10px;position:relative;
+  transition:border-color .15s, transform .15s;
+}
+.price-card:hover{border-color:rgba(201,162,39,.45);transform:translateY(-2px)}
+.price-card.featured{
+  border-color:var(--gold);
+  box-shadow:0 0 0 1px rgba(201,162,39,.25), 0 20px 50px rgba(0,0,0,.35);
+}
+.price-card .tag{
+  position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;
+  background:var(--gold);color:#0a0a0a;padding:3px 8px;border-radius:999px;
+}
+.price-card h3{font-size:1.05rem;font-weight:700}
+.price-card .amount{font-size:1.85rem;font-weight:700;color:var(--gold-soft);letter-spacing:-.02em}
+.price-card .amount span{font-size:13px;color:var(--muted);font-weight:500}
+.price-card ul{list-style:none;padding:0;margin:6px 0 4px;flex:1}
+.price-card ul li{
+  font-size:13px;color:#c8c8c8;padding:5px 0 5px 18px;position:relative;line-height:1.4;
+}
+.price-card ul li::before{
+  content:"✓";position:absolute;left:0;color:var(--gold);font-weight:700;font-size:12px;
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:11px 14px;border-radius:999px;font-size:13px;font-weight:600;
+  border:1px solid var(--border);background:var(--bg2);color:var(--text);
+  cursor:pointer;text-decoration:none;width:100%;margin-top:4px;
+}
+.btn:hover{border-color:var(--gold);color:var(--gold-soft);text-decoration:none}
+.btn-gold{
+  background:linear-gradient(135deg,var(--gold),#a8841a);
+  color:#0a0a0a;border-color:var(--gold);
+}
+.btn-gold:hover{color:#0a0a0a;filter:brightness(1.05);text-decoration:none}
+.note{
+  margin-top:18px;padding:14px 16px;border-radius:12px;
+  background:var(--bg2);border:1px solid var(--border);
+  color:var(--muted);font-size:13px;line-height:1.6;
+}
 footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
 </style>
 </head>
@@ -354,23 +451,100 @@ footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
       <span>Greedy Hudzell</span>
     </a>
     <nav class="nav">
-      <a href="/">Home</a>
-      <a href="/status">Status</a>
-      <a href="/executors">Executors</a>
-      <a href="/guide">Guide</a>
-      <a href="/tos"${activeNav === "tos" ? ' class="active"' : ""}>ToS</a>
-      <a href="/obfuscator">Obfuscator</a>
+      ${navHtml(activeNav)}
     </nav>
   </div>
 </header>
 <main class="wrap">
 ${content}
   <footer class="site">
-    © Greedy Hudzell · <a href="${DISCORD}">discord.gg/sbVuaT9a2T</a> · Not affiliated with Roblox
+    © Greedy Hudzell · <a href="${DISCORD}">discord.gg/sbVuaT9a2T</a> ·
+    <a href="/privacy">Privacy</a> · Not affiliated with Roblox
   </footer>
 </main>
 </body>
 </html>`;
+}
+
+function pricingHtml() {
+  const content = `
+  <div class="page-header">
+    <div class="badge">Draft · USD</div>
+    <h1>Pricing</h1>
+    <p class="sub">Free day key via Work.ink · Paid plans include <b>account rewire</b></p>
+  </div>
+
+  <div class="price-grid">
+    <article class="price-card">
+      <h3>Free</h3>
+      <div class="amount">$0 <span>/ 24h</span></div>
+      <ul>
+        <li>Full script access</li>
+        <li>1 Roblox username</li>
+        <li>Work.ink unlock</li>
+        <li>No rewire</li>
+      </ul>
+      <a class="btn" href="${FREE_KEY}" target="_blank" rel="noopener">Get free key</a>
+    </article>
+
+    <article class="price-card">
+      <h3>Week</h3>
+      <div class="amount">$3.99 <span>/ 7 days</span></div>
+      <ul>
+        <li>Full script access</li>
+        <li>Account rewire included</li>
+        <li>Priority Discord support</li>
+        <li>Key via ticket / seller</li>
+      </ul>
+      <a class="btn" href="${DISCORD}" target="_blank" rel="noopener">Buy on Discord</a>
+    </article>
+
+    <article class="price-card featured">
+      <span class="tag">Popular</span>
+      <h3>Month</h3>
+      <div class="amount">$6.99 <span>/ 30 days</span></div>
+      <ul>
+        <li>Full script access</li>
+        <li>Account rewire included</li>
+        <li>Priority Discord support</li>
+        <li>Best balance of price / time</li>
+      </ul>
+      <a class="btn btn-gold" href="${DISCORD}" target="_blank" rel="noopener">Buy on Discord</a>
+    </article>
+
+    <article class="price-card">
+      <h3>Year</h3>
+      <div class="amount">$12.99 <span>/ 365 days</span></div>
+      <ul>
+        <li>Full script access</li>
+        <li>Account rewire included</li>
+        <li>Priority Discord support</li>
+        <li>Best long-term value</li>
+      </ul>
+      <a class="btn" href="${DISCORD}" target="_blank" rel="noopener">Buy on Discord</a>
+    </article>
+  </div>
+
+  <div class="note">
+    <b>Rewire</b> — on paid plans you may rebind the key to another Roblox username (fair-use; abuse may be limited).<br/>
+    Free keys are bound once and are not transferable.<br/>
+    Payments are handled via Discord for now. See <a href="/tos">Terms of Service</a>.
+  </div>
+
+  <div class="section" style="margin-top:36px">
+    <h2>What’s included</h2>
+    <p>Autofarm, missions tools, ESP, movement utilities, loader + key system, and ongoing updates while your plan is active. Features may change with game patches.</p>
+  </div>
+  <div class="section">
+    <h2>How to buy</h2>
+    <ul>
+      <li>Open our Discord and create a purchase ticket (or contact a listed seller)</li>
+      <li>Pay for Week / Month / Year</li>
+      <li>Receive a key — run the official loader and activate</li>
+    </ul>
+  </div>
+`;
+  return pageShell("Pricing", "pricing", content, true);
 }
 
 function tosHtml() {
@@ -378,58 +552,65 @@ function tosHtml() {
   <div class="page-header">
     <div class="badge">Legal</div>
     <h1>Terms of Service</h1>
-    <p class="sub">Last updated: June 2025</p>
+    <p class="sub">Last updated: August 2026</p>
   </div>
-
   <div class="section">
     <h2>1. Acceptance</h2>
-    <p>By purchasing, using, or accessing any Greedy Hudzell (GH) product, script, or service, you agree to these Terms of Service. If you do not agree, do not use our services.</p>
+    <p>By purchasing, unlocking, using, or accessing any Greedy Hudzell (GH) product, script, loader, website, Discord bot, or related service, you agree to these Terms of Service. If you do not agree, do not use our services.</p>
   </div>
-
   <div class="section">
-    <h2>2. License</h2>
-    <p>Upon purchasing a key, you are granted a non-transferable, non-exclusive, revocable license to use the GH script for personal use only. You may not:</p>
+    <h2>2. Plans &amp; pricing</h2>
+    <p>We may offer free and paid access:</p>
     <ul>
-      <li>Resell, redistribute, or share your key with others</li>
-      <li>Deobfuscate, reverse-engineer, or modify the script</li>
-      <li>Use the script to harm, exploit, or harass other players</li>
-      <li>Claim the script or any part of it as your own work</li>
+      <li><strong>Free</strong> — limited-duration key (typically 24 hours) obtained through the published unlock flow (e.g. Work.ink). One Roblox username bind. No rewire.</li>
+      <li><strong>Week</strong> — USD 3.99 for 7 days</li>
+      <li><strong>Month</strong> — USD 6.99 for 30 days</li>
+      <li><strong>Year</strong> — USD 12.99 for 365 days</li>
+    </ul>
+    <p>Prices are listed on <a href="/pricing">/pricing</a> and may change. The price at the time of purchase applies to that order.</p>
+  </div>
+  <div class="section">
+    <h2>3. License</h2>
+    <p>Upon obtaining a valid key, you receive a non-transferable, non-exclusive, revocable license for personal use only. You may not:</p>
+    <ul>
+      <li>Resell, rent, redistribute, or publicly share keys or script builds</li>
+      <li>Deobfuscate, reverse-engineer, or claim GH as your own work</li>
+      <li>Use GH to harass others or for purposes unrelated to the intended game tooling</li>
+      <li>Bypass or attack our key, website, or Discord systems</li>
     </ul>
   </div>
-
   <div class="section">
-    <h2>3. Refund Policy</h2>
-    <p>All sales are final. We do not offer refunds under any circumstances, including but not limited to: game updates that temporarily break functionality, user error, or change of mind. If the script is broken due to our fault, we will provide an extended key at our discretion.</p>
+    <h2>4. Account bind &amp; rewire</h2>
+    <p><strong>Free keys</strong> are bound to a single Roblox username and are not eligible for rewire.</p>
+    <p><strong>Paid keys</strong> (Week / Month / Year) include <strong>account rewire</strong>: you may request rebinding to another Roblox username subject to fair use. We may deny or rate-limit rewires in cases of abuse, resale, or fraud. Rewire does not extend the expiry date unless we explicitly say so.</p>
   </div>
-
   <div class="section">
-    <h2>4. Account & Key Responsibility</h2>
-    <p>You are solely responsible for keeping your key secure. Sharing your key may result in permanent revocation without refund. We reserve the right to revoke any key at any time for violation of these terms.</p>
+    <h2>5. Refund policy</h2>
+    <p>All sales are final after a key has been delivered. We do not offer refunds for change of mind, executor issues, user error, or temporary breakage caused by game updates. If GH is unusable due to a fault on our side, we may extend a key at our discretion.</p>
   </div>
-
   <div class="section">
-    <h2>5. Service Availability</h2>
-    <p>We do not guarantee 100% uptime. The script may be temporarily unavailable due to Roblox updates, maintenance, or other factors outside our control. Downtime does not qualify for refunds or key extensions.</p>
+    <h2>6. Key responsibility</h2>
+    <p>You are responsible for keeping your key private. Sharing a key may result in revocation without refund. We may revoke keys that violate these terms, including abuse of rewire or payment fraud.</p>
   </div>
-
   <div class="section">
-    <h2>6. Prohibited Use</h2>
-    <p>You agree not to use GH products for any purpose that violates Roblox's Terms of Service or any applicable laws. You bear full responsibility for any consequences resulting from your use of the script on your Roblox account.</p>
+    <h2>7. Service availability</h2>
+    <p>We do not guarantee uninterrupted service. Roblox updates, executor changes, maintenance, or third-party outages may affect functionality. Downtime alone does not automatically entitle you to a refund or extension.</p>
   </div>
-
   <div class="section">
-    <h2>7. Disclaimer</h2>
-    <p>Greedy Hudzell is not affiliated with, endorsed by, or in any way officially connected with Roblox Corporation. Use of any exploit or script may result in your Roblox account being banned. We are not responsible for any account actions taken by Roblox.</p>
+    <h2>8. Prohibited use &amp; risk</h2>
+    <p>You are solely responsible for complying with Roblox Terms of Service and applicable laws. Use of third-party scripts and executors can result in account penalties. GH is provided as-is; we are not responsible for bans, data loss, or other account actions.</p>
   </div>
-
   <div class="section">
-    <h2>8. Changes to Terms</h2>
-    <p>We reserve the right to update these terms at any time. Continued use of our services after changes constitutes acceptance of the new terms. Check this page periodically for updates.</p>
+    <h2>9. Disclaimer</h2>
+    <p>Greedy Hudzell is not affiliated with, endorsed by, or connected to Roblox Corporation. All trademarks belong to their owners.</p>
   </div>
-
   <div class="section">
-    <h2>9. Contact</h2>
-    <p>For questions or disputes, reach us via our <a href="${DISCORD}">Discord server</a>.</p>
+    <h2>10. Changes</h2>
+    <p>We may update these terms at any time. Continued use after changes constitutes acceptance. Material changes may be announced on Discord.</p>
+  </div>
+  <div class="section">
+    <h2>11. Contact</h2>
+    <p>Questions: <a href="${DISCORD}">Discord</a>. See also <a href="/privacy">Privacy Policy</a> and <a href="/pricing">Pricing</a>.</p>
   </div>
 `;
   return pageShell("Terms of Service", "tos", content);
@@ -440,81 +621,42 @@ function privacyHtml() {
   <div class="page-header">
     <div class="badge">Legal</div>
     <h1>Privacy Policy</h1>
-    <p class="sub">Last updated: June 2025</p>
+    <p class="sub">Last updated: August 2026</p>
   </div>
-
   <div class="section">
     <h2>1. Overview</h2>
-    <p>Greedy Hudzell ("we", "us") is committed to protecting your privacy. This policy explains what information we collect, how we use it, and your rights regarding it.</p>
+    <p>Greedy Hudzell ("we", "us") collects minimal data required to run keys, support, and anti-abuse.</p>
   </div>
-
   <div class="section">
-    <h2>2. Information We Collect</h2>
-    <p>We collect minimal information necessary to operate our service:</p>
+    <h2>2. Information we collect</h2>
     <ul>
-      <li><strong>Roblox username</strong> — collected when you activate a key, used to bind your license</li>
-      <li><strong>Discord user ID</strong> — collected if you interact with our Discord bot, used for key management</li>
-      <li><strong>Purchase records</strong> — transaction references for support purposes (no payment card data is stored by us)</li>
-      <li><strong>Usage data</strong> — basic script execution logs for anti-abuse and debugging purposes</li>
+      <li><strong>Roblox username</strong> — license bind / rewire</li>
+      <li><strong>Discord user ID</strong> — bot commands, tickets, purchases</li>
+      <li><strong>Purchase / key metadata</strong> — plan, expiry, revoke status</li>
+      <li><strong>Technical logs</strong> — validation and abuse prevention</li>
     </ul>
   </div>
-
   <div class="section">
-    <h2>3. How We Use Your Data</h2>
-    <p>Your data is used exclusively to:</p>
-    <ul>
-      <li>Validate and manage your license key</li>
-      <li>Provide customer support</li>
-      <li>Detect and prevent abuse or key sharing</li>
-      <li>Improve script performance and stability</li>
-    </ul>
-    <p>We do not sell, rent, or share your personal data with third parties for marketing purposes.</p>
+    <h2>3. Use of data</h2>
+    <p>We use data to validate licenses, provide support, prevent sharing/abuse, and improve stability. We do not sell personal data for marketing.</p>
   </div>
-
   <div class="section">
-    <h2>4. Data Retention</h2>
-    <p>We retain your data for as long as your license is active, plus a reasonable period afterward for support purposes. You may request deletion of your data by contacting us on Discord.</p>
+    <h2>4. Retention &amp; rights</h2>
+    <p>Data is kept while a license is relevant for support and anti-abuse. You may request access or deletion via Discord where legally applicable.</p>
   </div>
-
   <div class="section">
-    <h2>5. Third-Party Services</h2>
-    <p>Our service may interact with the following third-party platforms, each governed by their own privacy policies:</p>
-    <ul>
-      <li>Roblox Corporation — for username verification</li>
-      <li>Discord — for bot interactions and community support</li>
-      <li>Cloudflare — for DDoS protection and content delivery</li>
-    </ul>
+    <h2>5. Third parties</h2>
+    <p>Roblox, Discord, Cloudflare, and payment intermediaries may process data under their own policies.</p>
   </div>
-
   <div class="section">
-    <h2>6. Security</h2>
-    <p>We take reasonable measures to protect your data. However, no system is 100% secure. We are not liable for unauthorized access resulting from circumstances beyond our reasonable control.</p>
-  </div>
-
-  <div class="section">
-    <h2>7. Your Rights</h2>
-    <p>You have the right to:</p>
-    <ul>
-      <li>Request access to the data we hold about you</li>
-      <li>Request correction of inaccurate data</li>
-      <li>Request deletion of your data</li>
-    </ul>
-    <p>To exercise these rights, contact us via our <a href="${DISCORD}">Discord server</a>.</p>
-  </div>
-
-  <div class="section">
-    <h2>8. Changes</h2>
-    <p>We may update this policy from time to time. We will notify users of significant changes via our Discord server. Continued use of our service after changes constitutes acceptance.</p>
-  </div>
-
-  <div class="section">
-    <h2>9. Contact</h2>
-    <p>Privacy-related inquiries can be directed to us via <a href="${DISCORD}">Discord</a>.</p>
+    <h2>6. Contact</h2>
+    <p><a href="${DISCORD}">Discord</a> · <a href="/tos">Terms of Service</a></p>
   </div>
 `;
   return pageShell("Privacy Policy", "privacy", content);
 }
 
+/* ---- obfuscator page (unchanged logic, nav includes Pricing) ---- */
 function obfuscateHtml() {
   const pluginChecks = PLUGIN_DEFS.map(
     (p) =>
@@ -526,7 +668,6 @@ function obfuscateHtml() {
     (f) =>
       `<label class="chk"><input type="checkbox" data-root="${f.key}" ${f.def ? "checked" : ""}/> ${f.label}</label>`
   ).join("\n");
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -574,47 +715,24 @@ a:hover{text-decoration:underline}
 }
 .nav a:hover{color:var(--text);border-color:var(--border);background:var(--card);text-decoration:none}
 .nav a.active{color:#0a0a0a;background:var(--gold);border-color:var(--gold)}
-.panel{
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
-  padding:18px;margin-top:18px;
-}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-top:18px}
 .panel h2{font-size:1.15rem;margin-bottom:4px}
 .panel .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
-.card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
-  padding:14px;margin-bottom:12px;
-}
-label.title{
-  display:block;color:var(--muted);font-size:11px;text-transform:uppercase;
-  letter-spacing:.05em;margin-bottom:8px;font-weight:600;
-}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+label.title{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;font-weight:600}
 .chk{display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0;color:var(--text)}
 .chk input{accent-color:var(--gold)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:800px){.grid{grid-template-columns:1fr}}
 .plugins{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
 @media(max-width:600px){.plugins{grid-template-columns:1fr}}
-textarea,select{
-  width:100%;border-radius:10px;border:1px solid var(--border);
-  background:#0c0c0c;color:var(--text);padding:10px 12px;font-size:13px;
-}
-textarea{
-  min-height:240px;font-family:"JetBrains Mono",ui-monospace,monospace;
-  font-size:12px;resize:vertical;
-}
+textarea,select{width:100%;border-radius:10px;border:1px solid var(--border);background:#0c0c0c;color:var(--text);padding:10px 12px;font-size:13px}
+textarea{min-height:240px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;resize:vertical}
 textarea:focus,select:focus{outline:1px solid rgba(201,162,39,.4)}
-.btn{
-  display:inline-flex;align-items:center;justify-content:center;
-  padding:10px 14px;border-radius:999px;font-size:13px;font-weight:600;
-  border:1px solid var(--border);background:var(--card);color:var(--text);
-  cursor:pointer;margin-top:8px;
-}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;margin-top:8px}
 .btn:hover{border-color:var(--gold);color:var(--gold-soft)}
 .btn:disabled{opacity:.5;cursor:wait}
-.btn-gold{
-  background:linear-gradient(135deg,var(--gold),#a8841a);
-  color:#0a0a0a;border-color:var(--gold);
-}
+.btn-gold{background:linear-gradient(135deg,var(--gold),#a8841a);color:#0a0a0a;border-color:var(--gold)}
 .btn-gold:hover{color:#0a0a0a;filter:brightness(1.05)}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .actions .btn{flex:1;min-width:120px}
@@ -633,45 +751,32 @@ footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
       <span>Greedy Hudzell</span>
     </a>
     <nav class="nav">
-      <a href="/">Home</a>
-      <a href="/status">Status</a>
-      <a href="/executors">Executors</a>
-      <a href="/guide">Guide</a>
-      <a href="/tos">ToS</a>
-      <a class="active" href="/obfuscator">Obfuscator</a>
+      ${navHtml("obfuscator")}
     </nav>
   </div>
 </header>
-
 <main class="wrap">
   <section class="panel">
     <h2>Lua obfuscator</h2>
-    <p class="sub">Same tabs as the rest of the site — leave via the top nav anytime.</p>
-
+    <p class="sub">Heavy presets (full/VM) can cause stack overflow on large hubs — prefer light/medium for GH.</p>
     <div class="card">
       <label class="title">Preset</label>
       <select id="preset">
-        <option value="custom">Custom (checkboxes below)</option>
-        <option value="light">Light — SwizzleLookups + EncryptStrings</option>
-        <option value="medium" selected>Medium — strings + table + mild CF</option>
-        <option value="full">Full — Virtualize + all main plugins</option>
-        <option value="embed">Embed only — [=====[ ]=====]</option>
-        <option value="embed_bit32">Embed + bit32 scramble + table/strings pipeline</option>
+        <option value="custom">Custom</option>
+        <option value="light">Light</option>
+        <option value="medium" selected>Medium</option>
+        <option value="full">Full (VM — may break large scripts)</option>
+        <option value="embed">Embed only</option>
+        <option value="embed_bit32">Embed + bit32</option>
       </select>
-      <p class="hint">
-        <b>embed</b> — local wrap, no API.<br/>
-        <b>embed_bit32</b> — optional API light pass then bit32 inside long-string loader (needs bit32 / Luau).<br/>
-        <b>full</b> — heavy VM; may break large Roblox scripts (upvalues).
-      </p>
+      <p class="hint">If loader reports <b>stack overflow</b> after obfuscation, use light/medium or skip VM.</p>
     </div>
-
     <div class="card">
-      <label class="title">Root flags (luaobfuscator)</label>
+      <label class="title">Root flags</label>
       <div class="plugins" id="roots">${rootChecks}</div>
       <label class="title" style="margin-top:14px">CustomPlugins</label>
       <div class="plugins" id="plugins">${pluginChecks}</div>
     </div>
-
     <div class="grid">
       <div class="card">
         <label class="title">Input</label>
@@ -692,19 +797,16 @@ footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
       </div>
     </div>
   </section>
-
   <footer class="site">
     © Greedy Hudzell · <a href="${DISCORD}">discord.gg/sbVuaT9a2T</a> · Not affiliated with Roblox
   </footer>
 </main>
-
 <script>
 const statusEl = document.getElementById('status');
 const input = document.getElementById('input');
 const output = document.getElementById('output');
 const preset = document.getElementById('preset');
 const runBtn = document.getElementById('run');
-
 function collectOptions() {
   const opts = {};
   document.querySelectorAll('[data-root]').forEach(el => {
@@ -715,7 +817,6 @@ function collectOptions() {
   });
   return opts;
 }
-
 async function syntaxCheck(code) {
   const res = await fetch('/api/syntax-check', {
     method: 'POST',
@@ -724,7 +825,6 @@ async function syntaxCheck(code) {
   });
   return res.json();
 }
-
 async function doCheck(which) {
   const code = which === 'in' ? input.value : output.value;
   statusEl.className = 'status';
@@ -743,10 +843,8 @@ async function doCheck(which) {
     statusEl.className = 'status err';
   }
 }
-
 document.getElementById('checkIn').onclick = () => doCheck('in');
 document.getElementById('checkOut').onclick = () => doCheck('out');
-
 runBtn.onclick = async () => {
   const code = input.value || '';
   if (!code.trim()) {
@@ -783,7 +881,6 @@ runBtn.onclick = async () => {
   }
   runBtn.disabled = false;
 };
-
 document.getElementById('copy').onclick = async () => {
   try {
     await navigator.clipboard.writeText(output.value || '');
@@ -824,13 +921,16 @@ export default {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
       });
     }
-
+    if (path === "/pricing") {
+      return new Response(pricingHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+      });
+    }
     if (path === "/tos") {
       return new Response(tosHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
       });
     }
-
     if (path === "/privacy") {
       return new Response(privacyHtml(), {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
@@ -874,9 +974,7 @@ export default {
           headers: JSON_HEADERS,
         });
       }
-
       const apiKey = (env && env.LUAOBF_API_KEY) || FALLBACK_KEY;
-
       try {
         if (preset === "embed") {
           return new Response(
@@ -884,32 +982,21 @@ export default {
             { headers: JSON_HEADERS }
           );
         }
-
         if (preset === "embed_bit32") {
           let src = code;
           const light = await callLuaObf(apiKey, code, presetConfig("light"));
           if (light.ok) src = light.code;
-          const wrapped = bit32Embed(src);
           return new Response(
             JSON.stringify({
               ok: true,
-              code: wrapped,
+              code: bit32Embed(src),
               mode: "embed_bit32",
-              note: light.ok
-                ? "api light + bit32 embed"
-                : "bit32 embed only (api light failed: " + (light.error || "") + ")",
+              note: light.ok ? "api light + bit32 embed" : "bit32 embed only",
             }),
             { headers: JSON_HEADERS }
           );
         }
-
-        let cfg;
-        if (preset === "custom") {
-          cfg = buildConfigFromOptions(body.options || {});
-        } else {
-          cfg = presetConfig(preset);
-        }
-
+        const cfg = preset === "custom" ? buildConfigFromOptions(body.options || {}) : presetConfig(preset);
         const result = await callLuaObf(apiKey, code, cfg);
         if (!result.ok) {
           return new Response(JSON.stringify(result), { status: 502, headers: JSON_HEADERS });
