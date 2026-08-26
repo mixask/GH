@@ -216,10 +216,7 @@ function syntaxCheck(code) {
     if (!inStr && c === "-" && code[i + 1] === "-" && code[i + 2] === "[") {
       let j = i + 3;
       let n = 0;
-      while (code[j] === "=") {
-        n++;
-        j++;
-      }
+      while (code[j] === "=") { n++; j++; }
       if (code[j] === "[") {
         i = j + 1;
         while (i < code.length) {
@@ -227,14 +224,8 @@ function syntaxCheck(code) {
           if (code[i] === "]") {
             let k = i + 1;
             let m = 0;
-            while (code[k] === "=") {
-              m++;
-              k++;
-            }
-            if (m === n && code[k] === "]") {
-              i = k + 1;
-              break;
-            }
+            while (code[k] === "=") { m++; k++; }
+            if (m === n && code[k] === "]") { i = k + 1; break; }
           }
           i++;
         }
@@ -248,56 +239,27 @@ function syntaxCheck(code) {
     }
 
     if (!inStr && c === "[" && code[i + 1] === "[") {
-      inStr = "long";
-      longEq = 0;
-      i += 2;
-      continue;
+      inStr = "long"; longEq = 0; i += 2; continue;
     }
     if (!inStr && c === "[" && code[i + 1] === "=") {
-      let n = 0;
-      let j = i + 1;
-      while (code[j] === "=") {
-        n++;
-        j++;
-      }
-      if (code[j] === "[") {
-        inStr = "long";
-        longEq = n;
-        i = j + 1;
-        continue;
-      }
+      let n = 0; let j = i + 1;
+      while (code[j] === "=") { n++; j++; }
+      if (code[j] === "[") { inStr = "long"; longEq = n; i = j + 1; continue; }
     }
     if (inStr === "long") {
       if (c === "]") {
-        let n = 0;
-        let j = i + 1;
-        while (code[j] === "=") {
-          n++;
-          j++;
-        }
-        if (n === longEq && code[j] === "]") {
-          inStr = null;
-          i = j + 1;
-          continue;
-        }
+        let n = 0; let j = i + 1;
+        while (code[j] === "=") { n++; j++; }
+        if (n === longEq && code[j] === "]") { inStr = null; i = j + 1; continue; }
       }
-      i++;
-      continue;
+      i++; continue;
     }
 
-    if (!inStr && (c === '"' || c === "'")) {
-      inStr = c;
-      i++;
-      continue;
-    }
+    if (!inStr && (c === '"' || c === "'")) { inStr = c; i++; continue; }
     if (inStr === '"' || inStr === "'") {
-      if (c === "\\") {
-        i += 2;
-        continue;
-      }
+      if (c === "\\") { i += 2; continue; }
       if (c === inStr) inStr = null;
-      i++;
-      continue;
+      i++; continue;
     }
 
     if (pairs[c]) {
@@ -318,6 +280,239 @@ function syntaxCheck(code) {
     issues,
     note: "Block comments --[[ ]] are valid and ignored",
   };
+}
+
+function pageShell(title, activeNav, content) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title} · Greedy Hudzell</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#0a0a0a;--bg2:#111;--card:#141414;--border:#2a2a2a;
+  --text:#f2f2f2;--muted:#9a9a9a;--gold:#C9A227;--gold-soft:#E8C547;
+  --ok:#4caf7a;--bad:#e85d5d;--radius:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;line-height:1.55;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%,rgba(201,162,39,.08),transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(255,255,255,.03),transparent);
+}
+a{color:var(--gold-soft);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{width:min(780px,94vw);margin:0 auto;padding:28px 0 80px}
+.top{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:rgba(10,10,10,.78);border-bottom:1px solid var(--border);
+}
+.top-inner{
+  width:min(980px,94vw);margin:0 auto;display:flex;align-items:center;
+  justify-content:space-between;gap:16px;padding:14px 0;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;color:var(--text);text-decoration:none}
+.brand:hover{text-decoration:none}
+.brand-mark{
+  width:34px;height:34px;border-radius:10px;
+  background:linear-gradient(135deg,#1a1a1a,#2a2410);
+  border:1px solid var(--gold);display:grid;place-items:center;
+  color:var(--gold);font-size:14px;font-weight:700;
+}
+.nav{display:flex;flex-wrap:wrap;gap:6px}
+.nav a{
+  color:var(--muted);padding:8px 14px;border-radius:999px;
+  border:1px solid transparent;font-size:13px;font-weight:500;text-decoration:none;
+}
+.nav a:hover{color:var(--text);border-color:var(--border);background:var(--card);text-decoration:none}
+.nav a.active{color:#0a0a0a;background:var(--gold);border-color:var(--gold)}
+.page-header{margin:32px 0 24px}
+.page-header h1{font-size:1.8rem;font-weight:700;margin-bottom:6px}
+.page-header .sub{color:var(--muted);font-size:14px}
+.section{margin-bottom:32px}
+.section h2{font-size:1.05rem;font-weight:600;color:var(--gold-soft);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.section p{color:#c8c8c8;font-size:14px;line-height:1.7;margin-bottom:10px}
+.section ul{color:#c8c8c8;font-size:14px;line-height:1.7;padding-left:20px;margin-bottom:10px}
+.section ul li{margin-bottom:4px}
+.badge{
+  display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;
+  border-radius:999px;background:rgba(201,162,39,.12);color:var(--gold);
+  border:1px solid rgba(201,162,39,.25);margin-bottom:18px;
+}
+footer.site{margin-top:28px;text-align:center;color:#555;font-size:12px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="/">
+      <div class="brand-mark">GH</div>
+      <span>Greedy Hudzell</span>
+    </a>
+    <nav class="nav">
+      <a href="/">Home</a>
+      <a href="/status">Status</a>
+      <a href="/executors">Executors</a>
+      <a href="/guide">Guide</a>
+      <a href="/tos"${activeNav === "tos" ? ' class="active"' : ""}>ToS</a>
+      <a href="/obfuscator">Obfuscator</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+${content}
+  <footer class="site">
+    © Greedy Hudzell · <a href="${DISCORD}">discord.gg/sbVuaT9a2T</a> · Not affiliated with Roblox
+  </footer>
+</main>
+</body>
+</html>`;
+}
+
+function tosHtml() {
+  const content = `
+  <div class="page-header">
+    <div class="badge">Legal</div>
+    <h1>Terms of Service</h1>
+    <p class="sub">Last updated: June 2025</p>
+  </div>
+
+  <div class="section">
+    <h2>1. Acceptance</h2>
+    <p>By purchasing, using, or accessing any Greedy Hudzell (GH) product, script, or service, you agree to these Terms of Service. If you do not agree, do not use our services.</p>
+  </div>
+
+  <div class="section">
+    <h2>2. License</h2>
+    <p>Upon purchasing a key, you are granted a non-transferable, non-exclusive, revocable license to use the GH script for personal use only. You may not:</p>
+    <ul>
+      <li>Resell, redistribute, or share your key with others</li>
+      <li>Deobfuscate, reverse-engineer, or modify the script</li>
+      <li>Use the script to harm, exploit, or harass other players</li>
+      <li>Claim the script or any part of it as your own work</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>3. Refund Policy</h2>
+    <p>All sales are final. We do not offer refunds under any circumstances, including but not limited to: game updates that temporarily break functionality, user error, or change of mind. If the script is broken due to our fault, we will provide an extended key at our discretion.</p>
+  </div>
+
+  <div class="section">
+    <h2>4. Account & Key Responsibility</h2>
+    <p>You are solely responsible for keeping your key secure. Sharing your key may result in permanent revocation without refund. We reserve the right to revoke any key at any time for violation of these terms.</p>
+  </div>
+
+  <div class="section">
+    <h2>5. Service Availability</h2>
+    <p>We do not guarantee 100% uptime. The script may be temporarily unavailable due to Roblox updates, maintenance, or other factors outside our control. Downtime does not qualify for refunds or key extensions.</p>
+  </div>
+
+  <div class="section">
+    <h2>6. Prohibited Use</h2>
+    <p>You agree not to use GH products for any purpose that violates Roblox's Terms of Service or any applicable laws. You bear full responsibility for any consequences resulting from your use of the script on your Roblox account.</p>
+  </div>
+
+  <div class="section">
+    <h2>7. Disclaimer</h2>
+    <p>Greedy Hudzell is not affiliated with, endorsed by, or in any way officially connected with Roblox Corporation. Use of any exploit or script may result in your Roblox account being banned. We are not responsible for any account actions taken by Roblox.</p>
+  </div>
+
+  <div class="section">
+    <h2>8. Changes to Terms</h2>
+    <p>We reserve the right to update these terms at any time. Continued use of our services after changes constitutes acceptance of the new terms. Check this page periodically for updates.</p>
+  </div>
+
+  <div class="section">
+    <h2>9. Contact</h2>
+    <p>For questions or disputes, reach us via our <a href="${DISCORD}">Discord server</a>.</p>
+  </div>
+`;
+  return pageShell("Terms of Service", "tos", content);
+}
+
+function privacyHtml() {
+  const content = `
+  <div class="page-header">
+    <div class="badge">Legal</div>
+    <h1>Privacy Policy</h1>
+    <p class="sub">Last updated: June 2025</p>
+  </div>
+
+  <div class="section">
+    <h2>1. Overview</h2>
+    <p>Greedy Hudzell ("we", "us") is committed to protecting your privacy. This policy explains what information we collect, how we use it, and your rights regarding it.</p>
+  </div>
+
+  <div class="section">
+    <h2>2. Information We Collect</h2>
+    <p>We collect minimal information necessary to operate our service:</p>
+    <ul>
+      <li><strong>Roblox username</strong> — collected when you activate a key, used to bind your license</li>
+      <li><strong>Discord user ID</strong> — collected if you interact with our Discord bot, used for key management</li>
+      <li><strong>Purchase records</strong> — transaction references for support purposes (no payment card data is stored by us)</li>
+      <li><strong>Usage data</strong> — basic script execution logs for anti-abuse and debugging purposes</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>3. How We Use Your Data</h2>
+    <p>Your data is used exclusively to:</p>
+    <ul>
+      <li>Validate and manage your license key</li>
+      <li>Provide customer support</li>
+      <li>Detect and prevent abuse or key sharing</li>
+      <li>Improve script performance and stability</li>
+    </ul>
+    <p>We do not sell, rent, or share your personal data with third parties for marketing purposes.</p>
+  </div>
+
+  <div class="section">
+    <h2>4. Data Retention</h2>
+    <p>We retain your data for as long as your license is active, plus a reasonable period afterward for support purposes. You may request deletion of your data by contacting us on Discord.</p>
+  </div>
+
+  <div class="section">
+    <h2>5. Third-Party Services</h2>
+    <p>Our service may interact with the following third-party platforms, each governed by their own privacy policies:</p>
+    <ul>
+      <li>Roblox Corporation — for username verification</li>
+      <li>Discord — for bot interactions and community support</li>
+      <li>Cloudflare — for DDoS protection and content delivery</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>6. Security</h2>
+    <p>We take reasonable measures to protect your data. However, no system is 100% secure. We are not liable for unauthorized access resulting from circumstances beyond our reasonable control.</p>
+  </div>
+
+  <div class="section">
+    <h2>7. Your Rights</h2>
+    <p>You have the right to:</p>
+    <ul>
+      <li>Request access to the data we hold about you</li>
+      <li>Request correction of inaccurate data</li>
+      <li>Request deletion of your data</li>
+    </ul>
+    <p>To exercise these rights, contact us via our <a href="${DISCORD}">Discord server</a>.</p>
+  </div>
+
+  <div class="section">
+    <h2>8. Changes</h2>
+    <p>We may update this policy from time to time. We will notify users of significant changes via our Discord server. Continued use of our service after changes constitutes acceptance.</p>
+  </div>
+
+  <div class="section">
+    <h2>9. Contact</h2>
+    <p>Privacy-related inquiries can be directed to us via <a href="${DISCORD}">Discord</a>.</p>
+  </div>
+`;
+  return pageShell("Privacy Policy", "privacy", content);
 }
 
 function obfuscateHtml() {
@@ -626,10 +821,19 @@ export default {
 
     if (path === "/obfuscator" || path === "/obfuscate") {
       return new Response(obfuscateHtml(), {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-cache",
-        },
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+      });
+    }
+
+    if (path === "/tos") {
+      return new Response(tosHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+      });
+    }
+
+    if (path === "/privacy") {
+      return new Response(privacyHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
       });
     }
 
@@ -643,9 +847,7 @@ export default {
           headers: JSON_HEADERS,
         });
       }
-      return new Response(JSON.stringify(syntaxCheck(body.code || "")), {
-        headers: JSON_HEADERS,
-      });
+      return new Response(JSON.stringify(syntaxCheck(body.code || "")), { headers: JSON_HEADERS });
     }
 
     if (path === "/api/obfuscate" && request.method === "POST") {
@@ -713,12 +915,7 @@ export default {
           return new Response(JSON.stringify(result), { status: 502, headers: JSON_HEADERS });
         }
         return new Response(
-          JSON.stringify({
-            ok: true,
-            code: result.code,
-            mode: preset,
-            sessionId: result.sessionId,
-          }),
+          JSON.stringify({ ok: true, code: result.code, mode: preset, sessionId: result.sessionId }),
           { headers: JSON_HEADERS }
         );
       } catch (e) {
