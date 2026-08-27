@@ -371,24 +371,56 @@ function executorsHtml() {
     <div id="ex_out" class="card muted">Loading executor status…</div>
   </div>
 <script>
+function fmtPct(v){
+  if(v==null||v==="")return "—";
+  if(typeof v==="number")return v+"%";
+  if(typeof v==="boolean")return v?"yes":"no";
+  if(typeof v==="string"){
+    var t=v.trim();
+    if(!t)return "—";
+    if(/^\d+(\.\d+)?$/.test(t))return t+"%";
+    return t;
+  }
+  return "—";
+}
+function pickSunc(x){
+  if(!x||typeof x!=="object")return "—";
+  // weao.xyz: score is suncPercentage; field "sunc" is metadata only
+  if(x.suncPercentage!=null)return fmtPct(x.suncPercentage);
+  if(x.uncPercentage!=null)return fmtPct(x.uncPercentage);
+  if(typeof x.sunc==="number"||typeof x.sunc==="string")return fmtPct(x.sunc);
+  if(typeof x.sUNC==="number"||typeof x.sUNC==="string")return fmtPct(x.sUNC);
+  if(x.percentage!=null)return fmtPct(x.percentage);
+  if(x.percent!=null)return fmtPct(x.percent);
+  return "—";
+}
+function fmtStatus(x){
+  if(x.updateStatus===true||x.updateStatus==="true"||x.updateStatus==="Updated")return "Updated";
+  if(x.updateStatus===false||x.updateStatus==="false")return "Not updated";
+  if(x.updateStatus!=null&&typeof x.updateStatus!=="object")return String(x.updateStatus);
+  if(x.status!=null&&typeof x.status!=="object")return String(x.status);
+  if(x.updatedDate)return String(x.updatedDate);
+  return "—";
+}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 (async function(){
   const el = document.getElementById('ex_out');
   try{
     const res = await fetch(${JSON.stringify(WEAO)}, { headers: { 'Accept': 'application/json' } });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const list = Array.isArray(data) ? data : (data.exploits || data.data || []);
+    const list = Array.isArray(data) ? data : (data.exploits || data.data || data.results || []);
     if(!list.length){
       el.textContent = 'No structured list returned. Check weao.xyz manually.';
       return;
     }
     const rows = list.slice(0, 40).map(function(x){
-      const name = x.name || x.title || x.executor || '?';
-      const up = x.updateStatus || x.status || x.unc || '';
-      const sunc = x.sunc || x.sUNC || x.percentage || '';
-      return '<tr><td>' + String(name).replace(/</g,'&lt;') + '</td><td>' + String(up).replace(/</g,'&lt;') + '</td><td>' + String(sunc).replace(/</g,'&lt;') + '</td></tr>';
+      const name = x.title || x.name || x.executor || '?';
+      const up = fmtStatus(x);
+      const sunc = pickSunc(x);
+      return '<tr><td>' + esc(name) + '</td><td>' + esc(up) + '</td><td>' + esc(sunc) + '</td></tr>';
     }).join('');
-    el.innerHTML = '<table><thead><tr><th>Executor</th><th>Status</th><th>sUNC / info</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    el.innerHTML = '<table><thead><tr><th>Executor</th><th>Status</th><th>sUNC %</th></tr></thead><tbody>' + rows + '</tbody></table>';
     el.className = 'card';
   } catch(e){
     el.textContent = 'Could not load weao.xyz (' + e + '). Use Discord recommendations.';
